@@ -114,6 +114,78 @@ local function AddName(name, quiet)
     return true
 end
 
+local SCAN_OBJECTIVE_TYPES = { monster = true, item = true }
+
+-- Tooltip and quest log format objectives differently, so compare without counts/punctuation.
+local function NormalizeObjective(text)
+    text = text:lower():gsub("%d+%s*/%s*%d+", ""):gsub("[%-:]", " "):gsub("%s+", " ")
+    return strtrim(text)
+end
+
+local function WantedObjectives()
+    local wanted = {}
+    for i = 1, C_QuestLog.GetNumQuestLogEntries() do
+        local info = C_QuestLog.GetInfo(i)
+        if info and not info.isHeader and not info.isHidden then
+            for _, obj in ipairs(C_QuestLog.GetQuestObjectives(info.questID) or {}) do
+                if SCAN_OBJECTIVE_TYPES[obj.type] and not obj.finished and obj.text and obj.text ~= "" then
+                    wanted[NormalizeObjective(obj.text)] = true
+                end
+            end
+        end
+    end
+    return wanted
+end
+
+local function UnitHasWantedObjective(unit, wanted)
+    local data = C_TooltipInfo.GetUnit(unit)
+    if not (data and data.lines) then return false end
+    for _, line in ipairs(data.lines) do
+        local text = line.leftText
+        if line.type == Enum.TooltipDataLineType.QuestObjective and type(text) == "string"
+            and not (issecretvalue and issecretvalue(text))
+            and wanted[NormalizeObjective(text)] then
+            return true
+        end
+    end
+    return false
+end
+
+local function ScanQuestMobs()
+    local wanted = WantedObjectives()
+    if not next(wanted) then
+        Print("No unfinished kill or loot objectives in your quest log.")
+        return
+    end
+
+    local units = { "target" }
+    for _, plate in ipairs(C_NamePlate.GetNamePlates()) do
+        units[#units + 1] = plate.namePlateUnitToken
+    end
+
+    local names, seen = DB().names, {}
+    local added, full = {}, false
+    for _, unit in ipairs(units) do
+        local name = SafeTargetName(unit)
+        if name and not seen[name] and not IndexOf(names, name)
+            and UnitCanAttack("player", unit) and not UnitIsPlayer(unit) and not UnitIsDead(unit)
+            and UnitHasWantedObjective(unit, wanted) then
+            seen[name] = true
+            if not AddName(name, true) then
+                full = true
+                break
+            end
+            added[#added + 1] = name
+        end
+    end
+
+    if #added > 0 then
+        Print("Added quest mobs: " .. table.concat(added, ", ") .. ".")
+    elseif not full then
+        Print("No new quest mobs nearby. Enemy nameplates must be visible to scan.")
+    end
+end
+
 local function RemoveAt(i, quiet)
     local names = DB().names
     local name = table.remove(names, i)
@@ -199,13 +271,14 @@ end
 
 ns.DB, ns.Print, ns.BuildBody, ns.SafeTargetName = DB, Print, BuildBody, SafeTargetName
 ns.AddName, ns.RemoveAt, ns.Move, ns.Clear, ns.SetPriority = AddName, RemoveAt, Move, Clear, SetPriority
-ns.GetStatus = GetStatus
+ns.GetStatus, ns.ScanQuestMobs = GetStatus, ScanQuestMobs
 ns.MACRO_NAME, ns.MACRO_MAX_LENGTH = MACRO_NAME, MACRO_MAX_LENGTH
 
 local HELP = {
     "/dtp - toggle the window",
     "/dtp list - print the list",
     "/dtp add [name] - add a name (default: current target)",
+    "/dtp scan - add nearby enemies needed for kill/loot quest objectives",
     "/dtp remove <name|#> - remove by name or list number",
     "/dtp up <#> - move an entry up (higher priority)",
     "/dtp clear - empty the list",
@@ -232,6 +305,8 @@ SlashCmdList.DYNAMICTARGETPING = function(msg)
             return
         end
         AddName(name)
+    elseif cmd == "scan" then
+        ScanQuestMobs()
     elseif cmd == "remove" or cmd == "rm" or cmd == "del" then
         local n = tonumber(arg)
         if n then

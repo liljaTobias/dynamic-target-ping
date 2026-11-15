@@ -18,6 +18,7 @@ Remove only the symlink—not this repository—to uninstall the development lin
 
 - `/dtp` (or the Addon Compartment) toggles a small window: drag rows to reorder, type a name or press **+** for your target, drag the header icon to an action bar. Double-click the header or press **-** to minimize.
 - Right-click a target portrait and choose **Add to DynamicTargetPing**, or use `/dtp add [name]`.
+- `/dtp scan` (or the magnifier button in the window) adds nearby enemies needed for unfinished kill or loot quest objectives. Enemy nameplates must be visible.
 - `/dtp list` prints the ordered list; the first matching entry has priority by default.
 - `/dtp up <#>` raises an entry's priority. `/dtp remove <name|#>` removes one; `/dtp clear` clears the list.
 - `/dtp priority on|off` toggles first-match priority. `/dtp test` shows the generated macro and its character count.
