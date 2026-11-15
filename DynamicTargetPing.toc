@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: DynamicTargetPing
+## Notes: Build a target-selection macro that pings the selected target.
+## Author: Tobias
+## Version: 1.0.0
+## SavedVariablesPerCharacter: DynamicTargetPingDB
+
+DynamicTargetPing.lua
