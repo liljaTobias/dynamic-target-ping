@@ -1,4 +1,4 @@
-local ADDON_NAME = ...
+local ADDON_NAME, ns = ...
 
 local MACRO_NAME = "DynamicTargetPing"
 local MACRO_ICON = "INV_Misc_QuestionMark"
@@ -7,6 +7,7 @@ local MAX_CHAR_MACROS = MAX_CHARACTER_MACROS or 30
 local PING_LINE = "/ping [@target,exists,nodead] attack"
 
 local pendingRebuild = false
+local notifyOnRegen = false
 
 local function Print(msg)
     print("|cff33ff99DynamicTargetPing|r: " .. msg)
@@ -41,11 +42,12 @@ local function BuildBody(names)
     return table.concat(lines, "\n")
 end
 
-local function ApplyMacro(silent)
+local function WriteMacro(quiet)
     if InCombatLockdown() then
-        if not pendingRebuild and not silent then
+        if not pendingRebuild and not quiet then
             Print("In combat - macro will update when combat ends.")
         end
+        notifyOnRegen = notifyOnRegen or not quiet
         pendingRebuild = true
         return
     end
@@ -64,10 +66,23 @@ local function ApplyMacro(silent)
             return
         end
         CreateMacro(MACRO_NAME, MACRO_ICON, body, true)
-        Print("Created character macro '" .. MACRO_NAME .. "'. Open /macro and drag it to your action bar.")
+        Print("Created character macro '" .. MACRO_NAME .. "'. Drag it from the /dtp window to your action bar.")
     elseif GetMacroBody(index) ~= body then
         EditMacro(index, nil, nil, body)
     end
+end
+
+local function ApplyMacro(quiet)
+    WriteMacro(quiet)
+    if ns.Refresh then ns.Refresh() end
+end
+
+local function GetStatus()
+    if pendingRebuild then return "pending" end
+    local index = GetMacroIndexByName(MACRO_NAME)
+    if index == 0 then return "missing" end
+    if GetMacroBody(index) ~= BuildBody(DB().names) then return "stale" end
+    return "ok"
 end
 
 local function SafeTargetName(unit)
@@ -78,31 +93,62 @@ local function SafeTargetName(unit)
     return name
 end
 
-local function AddName(name)
+local function AddName(name, quiet)
     local names = DB().names
     if IndexOf(names, name) then
         Print("'" .. name .. "' is already in the list.")
-        return
+        return false
     end
     local candidate = { unpack(names) }
     candidate[#candidate + 1] = name
     local len = #BuildBody(candidate)
     if len > MACRO_MAX_LENGTH then
         Print(("Can't add '%s': macro would be %d/%d characters. Remove a name first."):format(name, len, MACRO_MAX_LENGTH))
-        return
+        return false
     end
     names[#names + 1] = name
-    Print(("Added '%s' (%d/%d chars)."):format(name, len, MACRO_MAX_LENGTH))
-    ApplyMacro()
+    if not quiet then
+        Print(("Added '%s' (%d/%d chars)."):format(name, len, MACRO_MAX_LENGTH))
+    end
+    ApplyMacro(quiet)
+    return true
 end
 
-local function RemoveAt(i)
+local function RemoveAt(i, quiet)
     local names = DB().names
     local name = table.remove(names, i)
     if name then
-        Print("Removed '" .. name .. "'.")
-        ApplyMacro()
+        if not quiet then Print("Removed '" .. name .. "'.") end
+        ApplyMacro(quiet)
     end
+end
+
+local function Move(from, to)
+    local names = DB().names
+    if from == to or not names[from] or not names[to] then return end
+    table.insert(names, to, table.remove(names, from))
+    ApplyMacro(true)
+end
+
+local function Clear(quiet)
+    wipe(DB().names)
+    if not quiet then Print("List cleared.") end
+    ApplyMacro(quiet)
+end
+
+local function SetPriority(on, quiet)
+    local d = DB()
+    local old = d.priority
+    d.priority = on
+    local len = #BuildBody(d.names)
+    if len > MACRO_MAX_LENGTH then
+        d.priority = old
+        Print(("Can't switch: macro would be %d/%d characters. Remove a name first."):format(len, MACRO_MAX_LENGTH))
+        return false
+    end
+    if not quiet then Print("Priority mode " .. (on and "on" or "off") .. ".") end
+    ApplyMacro(quiet)
+    return true
 end
 
 local function RemoveName(name)
@@ -151,8 +197,14 @@ local function SetupMenu()
     end)
 end
 
+ns.DB, ns.Print, ns.BuildBody, ns.SafeTargetName = DB, Print, BuildBody, SafeTargetName
+ns.AddName, ns.RemoveAt, ns.Move, ns.Clear, ns.SetPriority = AddName, RemoveAt, Move, Clear, SetPriority
+ns.GetStatus = GetStatus
+ns.MACRO_NAME, ns.MACRO_MAX_LENGTH = MACRO_NAME, MACRO_MAX_LENGTH
+
 local HELP = {
-    "/dtp or /dtp list - show the list",
+    "/dtp - toggle the window",
+    "/dtp list - print the list",
     "/dtp add [name] - add a name (default: current target)",
     "/dtp remove <name|#> - remove by name or list number",
     "/dtp up <#> - move an entry up (higher priority)",
@@ -167,7 +219,10 @@ SlashCmdList.DYNAMICTARGETPING = function(msg)
     local cmd, arg = msg:match("^(%S*)%s*(.-)$")
     cmd = (cmd or ""):lower()
 
-    if cmd == "" or cmd == "list" then
+    if cmd == "" then
+        ApplyMacro(true)
+        ns.ToggleWindow()
+    elseif cmd == "list" then
         ListNames()
         ApplyMacro(true)
     elseif cmd == "add" then
@@ -190,27 +245,16 @@ SlashCmdList.DYNAMICTARGETPING = function(msg)
         local n = tonumber(arg)
         local names = DB().names
         if n and n > 1 and names[n] then
-            names[n - 1], names[n] = names[n], names[n - 1]
-            ApplyMacro()
+            Move(n, n - 1)
             ListNames()
         else
                 Print("Usage: /dtp up <#> (2.." .. #names .. ")")
         end
     elseif cmd == "clear" then
-        wipe(DB().names)
-        Print("List cleared.")
-        ApplyMacro()
+        Clear()
     elseif cmd == "priority" then
         if arg == "on" or arg == "off" then
-            DB().priority = (arg == "on")
-            local len = #BuildBody(DB().names)
-            if len > MACRO_MAX_LENGTH then
-                DB().priority = not DB().priority
-                Print(("Can't switch: macro would be %d/%d characters. Remove a name first."):format(len, MACRO_MAX_LENGTH))
-                return
-            end
-            Print("Priority mode " .. arg .. ".")
-            ApplyMacro()
+            SetPriority(arg == "on")
         else
                 Print("Priority mode is " .. (DB().priority and "on" or "off") .. ". Usage: /dtp priority on|off")
         end
@@ -239,14 +283,16 @@ f:SetScript("OnEvent", function(self, event, arg1)
     if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
         DB()
         SetupMenu()
+        ns.InitUI()
         self:UnregisterEvent("ADDON_LOADED")
     elseif event == "PLAYER_ENTERING_WORLD" then
         -- Macros aren't reliably available until after the first world load.
         C_Timer.After(1, function() ApplyMacro(true) end)
         self:UnregisterEvent("PLAYER_ENTERING_WORLD")
     elseif event == "PLAYER_REGEN_ENABLED" and pendingRebuild then
-        ApplyMacro()
-        Print("Macro updated.")
+        ApplyMacro(true)
+        if notifyOnRegen then Print("Macro updated.") end
+        notifyOnRegen = false
     end
 end)
 f:RegisterEvent("ADDON_LOADED")

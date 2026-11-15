@@ -4,5 +4,8 @@
 ## Author: Tobias
 ## Version: 1.0.0
 ## SavedVariablesPerCharacter: DynamicTargetPingDB
+## IconTexture: Interface\Icons\INV_Misc_QuestionMark
+## AddonCompartmentFunc: DynamicTargetPing_OnAddonCompartmentClick
 
 DynamicTargetPing.lua
+UI.lua
