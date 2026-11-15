@@ -3,7 +3,7 @@ local ADDON_NAME = ...
 local MACRO_NAME = "DynamicTargetPing"
 local MACRO_ICON = "INV_Misc_QuestionMark"
 local MACRO_MAX_LENGTH = 255
-local MAX_CHAR_MACROS = MAX_CHARACTER_MACROS or 18
+local MAX_CHAR_MACROS = MAX_CHARACTER_MACROS or 30
 local PING_LINE = "/ping [@target,exists,nodead] attack"
 
 local pendingRebuild = false
